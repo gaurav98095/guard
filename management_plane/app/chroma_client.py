@@ -8,7 +8,7 @@ from functools import lru_cache
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from app.config import config
+from app.settings import config
 
 logger = logging.getLogger(__name__)
 

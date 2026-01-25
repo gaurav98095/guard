@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth import User, get_current_tenant
 from app.encoding import encode_to_128d
 from app.models import IntentEvent, ComparisonResult
+from app.services.dataplane_client import DataPlaneClient, DataPlaneError
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,6 @@ router = APIRouter(prefix="/enforce", tags=["enforcement"])
 
 @lru_cache(maxsize=1)
 def get_data_plane_client():
-    from tupl import DataPlaneClient
-
     url = os.getenv("DATA_PLANE_URL", "localhost:50051")
     insecure = "localhost" in url or "127.0.0.1" in url
     return DataPlaneClient(url=url, insecure=insecure)
@@ -54,7 +53,6 @@ async def enforce_intent(
         return result
     except Exception as exc:
         logger.error("Data Plane enforcement failed: %s", exc, exc_info=True)
-        from tupl import DataPlaneError
 
         if isinstance(exc, DataPlaneError):
             raise HTTPException(

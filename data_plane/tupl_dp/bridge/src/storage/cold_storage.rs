@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::rule_vector::RuleVector;
+use crate::types::RuleMetadata;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS rule_anchors (
@@ -18,6 +19,14 @@ CREATE TABLE IF NOT EXISTS rule_anchors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stored_at ON rule_anchors(stored_at_ms);
+
+CREATE TABLE IF NOT EXISTS rule_metadata (
+    rule_id TEXT PRIMARY KEY,
+    metadata BLOB NOT NULL,
+    stored_at_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_metadata_stored_at ON rule_metadata(stored_at_ms);
 ";
 
 /// SQLite-backed cold storage.
@@ -79,6 +88,21 @@ impl ColdStorage {
         Ok(())
     }
 
+    /// Insert or update rule metadata.
+    pub fn upsert_metadata(&self, metadata: &RuleMetadata) -> Result<(), String> {
+        let conn = self.conn.lock();
+
+        let blob = serde_json::to_vec(metadata).map_err(|e| format!("Serialize failed: {}", e))?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO rule_metadata (rule_id, metadata, stored_at_ms) VALUES (?1, ?2, ?3)",
+            params![metadata.rule_id, blob, crate::types::now_ms()],
+        )
+        .map_err(|e| format!("Insert failed: {}", e))?;
+
+        Ok(())
+    }
+
     /// Remove a rule.
     pub fn remove(&self, rule_id: &str) -> Result<bool, String> {
         let conn = self.conn.lock();
@@ -91,6 +115,36 @@ impl ColdStorage {
             .map_err(|e| format!("Delete failed: {}", e))?;
 
         Ok(rows > 0)
+    }
+
+    /// Remove rule metadata.
+    pub fn remove_metadata(&self, rule_id: &str) -> Result<bool, String> {
+        let conn = self.conn.lock();
+
+        let rows = conn
+            .execute(
+                "DELETE FROM rule_metadata WHERE rule_id = ?1",
+                params![rule_id],
+            )
+            .map_err(|e| format!("Delete failed: {}", e))?;
+
+        Ok(rows > 0)
+    }
+
+    /// Remove all rules from cold storage.
+    pub fn clear(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM rule_anchors", [])
+            .map_err(|e| format!("Clear failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Remove all metadata from cold storage.
+    pub fn clear_metadata(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM rule_metadata", [])
+            .map_err(|e| format!("Clear failed: {}", e))?;
+        Ok(())
     }
 
     /// List all rule IDs.
@@ -108,6 +162,71 @@ impl ColdStorage {
             .map_err(|e| format!("Collect failed: {}", e))?;
 
         Ok(ids)
+    }
+
+    /// List all stored rule metadata.
+    pub fn list_metadata(&self) -> Result<Vec<RuleMetadata>, String> {
+        let conn = self.conn.lock();
+
+        let mut stmt = conn
+            .prepare("SELECT rule_id, metadata FROM rule_metadata")
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let items = stmt
+            .query_map([], |row| {
+                let rule_id: String = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                Ok((rule_id, blob))
+            })
+            .map_err(|e| format!("Query failed: {}", e))?
+            .collect::<Result<Vec<(String, Vec<u8>)>, _>>()
+            .map_err(|e| format!("Collect failed: {}", e))?;
+
+        let mut metadata = Vec::with_capacity(items.len());
+        for (rule_id, blob) in items {
+            match serde_json::from_slice::<RuleMetadata>(&blob) {
+                Ok(item) => metadata.push(item),
+                Err(err) => {
+                    eprintln!("Skipping invalid rule metadata for {}: {}", rule_id, err);
+                    let _ = conn.execute(
+                        "DELETE FROM rule_metadata WHERE rule_id = ?1",
+                        params![rule_id],
+                    );
+                }
+            }
+        }
+
+        Ok(metadata)
+    }
+
+    /// Get metadata by rule_id.
+    pub fn get_metadata(&self, rule_id: &str) -> Result<Option<RuleMetadata>, String> {
+        let conn = self.conn.lock();
+
+        let mut stmt = conn
+            .prepare("SELECT metadata FROM rule_metadata WHERE rule_id = ?1")
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let result = stmt.query_row(params![rule_id], |row| {
+            let blob: Vec<u8> = row.get(0)?;
+            Ok(blob)
+        });
+
+        match result {
+            Ok(blob) => match serde_json::from_slice::<RuleMetadata>(&blob) {
+                Ok(metadata) => Ok(Some(metadata)),
+                Err(err) => {
+                    eprintln!("Removing invalid rule metadata for {}: {}", rule_id, err);
+                    let _ = conn.execute(
+                        "DELETE FROM rule_metadata WHERE rule_id = ?1",
+                        params![rule_id],
+                    );
+                    Ok(None)
+                }
+            },
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Query failed: {}", e)),
+        }
     }
 
     /// Count total rules in cold storage.

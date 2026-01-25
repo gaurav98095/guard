@@ -60,7 +60,7 @@ clean:
 
 run-mgmt:
 	@echo "Starting management-plane server..."
-	cd management-plane && uv run uvicorn app.main:app --reload
+	cd management_plane && uv run uvicorn app.main:app --reload
 
 build-rust:
 	@echo "Building Rust semantic-sandbox..."

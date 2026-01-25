@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from app.main import app
 from app.auth import User, get_current_user
 from app.models import ComparisonResult
-from tupl import DataPlaneError
+from app.services.dataplane_client import DataPlaneError
 
 TEST_USER = User(id="tenant_test", email="test@example.com", role="authenticated")
 

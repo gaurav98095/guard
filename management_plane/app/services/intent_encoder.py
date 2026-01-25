@@ -25,13 +25,16 @@ Example:
 """
 
 import logging
-from typing import Any
-
 import numpy as np
 
 from app.models import IntentEvent
 from app.services.semantic_encoder import SemanticEncoder
-from app.vocab import VOCABULARY
+from app.services.canonical_slots import (
+    serialize_action_slot,
+    serialize_resource_slot,
+    serialize_data_slot,
+    serialize_risk_slot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,17 +72,7 @@ class IntentEncoder(SemanticEncoder):
         Returns:
             Slot text string
         """
-        fields = {
-            "action": event.action,
-            "actor_type": event.actor.type,
-        }
-
-        # Add tool call if available
-        if event.tool_name:
-            method = event.tool_method or "unspecified_method"
-            fields["tool_call"] = f"{event.tool_name}.{method}"
-
-        return VOCABULARY.assemble_anchor("action", fields)
+        return serialize_action_slot(event.action, event.actor.type)
 
     def _build_resource_slot(self, event: IntentEvent) -> str:
         """
@@ -91,21 +84,11 @@ class IntentEncoder(SemanticEncoder):
         Returns:
             Slot text string
         """
-        fields: dict[str, Any] = {
-            "resource_type": event.resource.type,
-        }
-
-        if event.resource.location:
-            fields["resource_location"] = event.resource.location
-
-        if event.resource.name:
-            fields["resource_name"] = event.resource.name
-
-        if event.tool_name:
-            fields["tool_name"] = event.tool_name
-            fields["tool_method"] = event.tool_method or event.action
-
-        return VOCABULARY.assemble_anchor("resource", fields)
+        return serialize_resource_slot(
+            event.resource.type,
+            resource_name=event.resource.name,
+            resource_location=event.resource.location,
+        )
 
     def _build_data_slot(self, event: IntentEvent) -> str:
         """
@@ -121,21 +104,7 @@ class IntentEncoder(SemanticEncoder):
         pii = event.data.pii if event.data.pii is not None else False
         volume = event.data.volume or "single"
 
-        fields: dict[str, Any] = {
-            "sensitivity": sensitivity,
-            "pii": pii,
-            "volume": volume,
-        }
-
-        # Add params_length if tool_params available
-        if event.tool_params and event.tool_name:
-            from app.encoding import canonicalize_dict
-
-            canonical_params = canonicalize_dict(event.tool_params)
-            if canonical_params:
-                fields["params_length"] = "short" if len(canonical_params) <= 120 else "long"
-
-        return VOCABULARY.assemble_anchor("data", fields)
+        return serialize_data_slot(sensitivity, pii=pii, volume=volume)
 
     def _build_risk_slot(self, event: IntentEvent) -> str:
         """
@@ -147,8 +116,7 @@ class IntentEncoder(SemanticEncoder):
         Returns:
             Slot text string
         """
-        fields = {"authn": event.risk.authn}
-        return VOCABULARY.assemble_anchor("risk", fields)
+        return serialize_risk_slot(event.risk.authn)
 
     def encode(self, event: IntentEvent) -> np.ndarray:
         """

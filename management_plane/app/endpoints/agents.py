@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..auth import User, get_current_tenant
-from ..config import config
+from ..settings import config
 from ..database import get_db, SupabaseDB
 from ..nl_policy_parser import NLPolicyParser, PolicyRules
 from ..policy_templates import POLICY_TEMPLATES, get_template_by_id, get_templates_by_category

@@ -1081,6 +1081,8 @@ vocabulary:
 
 **Route**: `POST /v2/guard/enforce`
 
+**Decision-only behavior**: The endpoint returns ALLOW/BLOCK decisions. The caller must enforce the decision in its own execution flow until the hook-based enforcement is implemented.
+
 **Request Model**:
 
 ```python

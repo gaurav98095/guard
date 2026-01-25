@@ -3,7 +3,7 @@
 //! Query and analyze enforcement sessions from hitlog files.
 
 use super::session::EnforcementSession;
-use rusqlite::{params, params_from_iter, Connection};
+use rusqlite::{params_from_iter, Connection};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};

@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Optional
 from .nl_policy_parser import PolicyRules
-from .config import config
+from .settings import config
 from .chroma_client import upsert_rule_payload, fetch_rule_payload
 from .rule_encoding import build_tool_whitelist_anchors
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Import gRPC if available
 try:
     import grpc
-    from tupl.generated.rule_installation_pb2 import (
+    from app.generated.rule_installation_pb2 import (
         AnchorVector,
         InstallRulesRequest,
         RemoveAgentRulesRequest,
@@ -29,7 +29,7 @@ try:
         ParamValue,
         StringList,
     )
-    from tupl.generated.rule_installation_pb2_grpc import DataPlaneStub
+    from app.generated.rule_installation_pb2_grpc import DataPlaneStub
     GRPC_AVAILABLE = True
 except ImportError:
     GRPC_AVAILABLE = False

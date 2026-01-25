@@ -33,6 +33,12 @@ import numpy as np
 
 from app.models import DesignBoundary
 from app.services.semantic_encoder import SemanticEncoder
+from app.services.canonical_slots import (
+    serialize_action_slot,
+    serialize_resource_slot,
+    serialize_data_slot,
+    serialize_risk_slot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +142,7 @@ class PolicyEncoder(SemanticEncoder):
         anchors = []
         for action in sorted(boundary.constraints.action.actions):
             for actor_type in sorted(boundary.constraints.action.actor_types):
-                anchor = f"action is {action} | actor_type equals {actor_type}"
-                anchors.append(anchor)
+                anchors.append(serialize_action_slot(action, actor_type))
         return anchors
 
     def _extract_resource_anchors(self, boundary: DesignBoundary) -> list[str]:
@@ -154,20 +159,28 @@ class PolicyEncoder(SemanticEncoder):
         """
         anchors = []
 
-        # Anchors for type × location combinations
         types = sorted(boundary.constraints.resource.types)
-        locations = sorted(boundary.constraints.resource.locations or ["unspecified"])
+        locations = (
+            sorted(boundary.constraints.resource.locations)
+            if boundary.constraints.resource.locations
+            else [None]
+        )
+        names = (
+            sorted(boundary.constraints.resource.names)
+            if boundary.constraints.resource.names
+            else [None]
+        )
 
         for rtype in types:
             for location in locations:
-                anchor = f"resource_type is {rtype} | resource_location is {location}"
-                anchors.append(anchor)
-
-        # Anchors for specific resource names
-        if boundary.constraints.resource.names:
-            for name in sorted(boundary.constraints.resource.names):
-                anchor = f"resource_name is {name}"
-                anchors.append(anchor)
+                for name in names:
+                    anchors.append(
+                        serialize_resource_slot(
+                            rtype,
+                            resource_name=name,
+                            resource_location=location,
+                        )
+                    )
 
         return anchors
 
@@ -192,8 +205,13 @@ class PolicyEncoder(SemanticEncoder):
         for sensitivity in sensitivities:
             for pii in pii_values:
                 for volume in volumes:
-                    anchor = f"sensitivity is {sensitivity} | pii is {pii} | volume is {volume}"
-                    anchors.append(anchor)
+                    anchors.append(
+                        serialize_data_slot(
+                            sensitivity,
+                            pii=pii,
+                            volume=volume,
+                        )
+                    )
 
         return anchors
 
@@ -210,7 +228,7 @@ class PolicyEncoder(SemanticEncoder):
             List of anchor strings
         """
         authn = boundary.constraints.risk.authn
-        return [f"authn is {authn}"]
+        return [serialize_risk_slot(authn)]
 
     def _encode_anchors(self, anchor_texts: list[str], layer_name: str) -> Tuple[np.ndarray, int]:
         """

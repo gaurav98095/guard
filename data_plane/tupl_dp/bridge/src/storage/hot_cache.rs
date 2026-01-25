@@ -128,6 +128,15 @@ impl HotCache {
         None
     }
 
+    /// Take a snapshot of the current cache entries (rule_id → RuleVector).
+    pub fn snapshot(&self) -> HashMap<String, RuleVector> {
+        let cache = self.cache.read();
+        cache
+            .iter()
+            .map(|(rule_id, (_, vector))| (rule_id.clone(), vector.clone()))
+            .collect()
+    }
+
     /// Check if a rule exists in the cache.
     pub fn contains(&self, rule_id: &str) -> bool {
         self.cache.read().contains_key(rule_id)

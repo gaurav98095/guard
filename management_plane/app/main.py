@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import config
+from .settings import config
 from .endpoints import agents, auth, boundaries, encoding, enforcement, enforcement_v2, health, intents, telemetry
 
 # Configure logging
@@ -91,15 +91,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception as e:
                 logger.warning(f"Canonicalization services initialization warning: {e}")
 
-        # Initialize FFI bridge (will load Rust library)
-        from .ffi_bridge import get_sandbox
-
-        sandbox = get_sandbox()
-        if sandbox.health_check():
-            logger.info("Rust library initialized and healthy")
-        else:
-            logger.warning("Rust library health check failed")
-
         # Seed a default test boundary for E2E tests if none exist
         try:
             from .endpoints.boundaries import _boundaries_store  # in-memory demo store
@@ -165,7 +156,7 @@ app.include_router(telemetry.router, prefix=config.API_V1_PREFIX)
 app.include_router(encoding.router, prefix=config.API_V1_PREFIX)  # v1.3: Encoding endpoints
 app.include_router(agents.router, prefix=config.API_V1_PREFIX)  # v1.0: Agent policies
 app.include_router(enforcement.router, prefix=config.API_V1_PREFIX)
-app.include_router(enforcement_v2.router, prefix=config.API_V1_PREFIX)  # NEW v2: Canonicalization + Enforcement
+app.include_router(enforcement_v2.router, prefix=config.API_V2_PREFIX)  # NEW v2: Canonicalization + Enforcement
 
 
 # Global exception handler

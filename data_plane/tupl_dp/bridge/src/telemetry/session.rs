@@ -3,7 +3,7 @@
 //! Tracks the complete lifecycle of a single intent evaluation.
 
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Unique identifier for an enforcement session
 pub type SessionId = String;

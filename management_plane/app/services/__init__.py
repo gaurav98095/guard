@@ -20,7 +20,9 @@ from app.services.canonicalization_logger import (
     CanonicalizedPredictionLogger,
 )
 from app.services.intent_encoder import IntentEncoder
+from app.services.dataplane_client import DataPlaneClient, DataPlaneError
 from app.services.policy_encoder import PolicyEncoder, RuleVector
+from app.services.policy_converter import PolicyConverter
 from app.services.semantic_encoder import SemanticEncoder
 
 __all__ = [
@@ -32,6 +34,9 @@ __all__ = [
     "CanonicalizedPredictionLog",
     "SemanticEncoder",
     "IntentEncoder",
+    "DataPlaneClient",
+    "DataPlaneError",
     "PolicyEncoder",
     "RuleVector",
+    "PolicyConverter",
 ]

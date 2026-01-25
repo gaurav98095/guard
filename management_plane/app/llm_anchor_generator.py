@@ -18,7 +18,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from app.config import Config
+from app.settings import Config
 from app.vocab import VOCABULARY
 
 logger = logging.getLogger(__name__)

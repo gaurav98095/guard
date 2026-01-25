@@ -13,8 +13,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
 from ..auth import User, get_current_user
-from ..config import config
-from ..ffi_bridge import get_sandbox
+from ..settings import config
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +57,6 @@ async def health_check() -> HealthResponse:
         ```
     """
     components = {}
-
-    # Check Rust library
-    try:
-        sandbox = get_sandbox()
-        components["rust_library"] = sandbox.health_check()
-    except Exception as e:
-        logger.error(f"Rust library health check failed: {e}")
-        components["rust_library"] = False
 
     # Check config
     try:

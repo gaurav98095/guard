@@ -27,7 +27,7 @@
 
 ### Goals
 
-1. **Expose enforcement pipeline as API-only** - No SDK required for external stacks
+1. **Expose enforcement pipeline as API-only** - No SDK required for external stacks; API returns allow/block decisions only
 2. **Add canonicalization layer** - Normalize variable vocabulary to canonical terms before encoding
 3. **Simplify data plane** - Remove FFI, merge semantic sandbox into bridge
 4. **Add tiered storage** - Hot (memory) + Warm (mmap) + Cold (SQLite)
@@ -107,13 +107,15 @@ External Stack (Python/Node/Go/etc)
 └────────────────────────────────────────────────────┘
 ```
 
+**Decision-only behavior**: `/v2/enforce` returns ALLOW/BLOCK decisions. Callers are responsible for enforcing those decisions in their own runtime until the hook-based enforcement flow is implemented.
+
 ### Component Responsibilities
 
 
 | Component       | Responsibilities                              | Language         | Port  |
 | ----------------- | ----------------------------------------------- | ------------------ | ------- |
-| **API Gateway** | REST endpoints, auth, encoding, orchestration | Python (FastAPI) | 8000  |
-| **Data Plane**  | Rule storage, enforcement, vector comparison  | Rust             | 50051 |
+| **API Gateway** | REST endpoints, auth, encoding, decision orchestration | Python (FastAPI) | 8000  |
+| **Data Plane**  | Rule storage, comparison, decision evaluation  | Rust             | 50051 |
 | **Storage**     | Rule persistence, crash recovery              | SQLite + mmap    | -     |
 
 ---

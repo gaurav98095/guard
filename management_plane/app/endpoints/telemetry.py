@@ -103,10 +103,11 @@ def get_data_plane_client():
     Uses environment variable DATA_PLANE_URL or defaults to localhost:50051.
     """
     import os
-    from tupl import DataPlaneClient
+    from app.services.dataplane_client import DataPlaneClient
     
     url = os.getenv("DATA_PLANE_URL", "localhost:50051")
-    return DataPlaneClient(url=url, timeout=10.0)
+    insecure = "localhost" in url or "127.0.0.1" in url
+    return DataPlaneClient(url=url, insecure=insecure)
 
 
 @router.get("/sessions", status_code=status.HTTP_200_OK)
@@ -308,4 +309,3 @@ async def get_session_detail(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get session: {str(e)}"
         )
-

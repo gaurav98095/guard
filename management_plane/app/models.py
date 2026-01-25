@@ -73,6 +73,30 @@ class Risk(BaseModel):
     authn: Literal["required", "not_required"]
 
 
+class LooseResource(BaseModel):
+    """
+    Resource model for v2 ingress before canonicalization.
+
+    Allows non-canonical resource types while preserving other constraints.
+    """
+
+    type: str
+    name: Optional[str] = None
+    location: Optional[Literal["local", "cloud"]] = None
+
+
+class LooseData(BaseModel):
+    """
+    Data model for v2 ingress before canonicalization.
+
+    Allows non-canonical sensitivity values.
+    """
+
+    sensitivity: list[str]
+    pii: Optional[bool] = None
+    volume: Optional[Literal["single", "bulk"]] = None
+
+
 class RateLimitContext(BaseModel):
     """
     Rate limit tracking context (v1.3).
@@ -130,6 +154,30 @@ class IntentEvent(BaseModel):
 
     # NEW v1.3 fields for layer-based enforcement
     layer: Optional[str] = None  # "L0", "L1", ..., "L6"
+    tool_name: Optional[str] = None
+    tool_method: Optional[str] = None
+    tool_params: Optional[dict] = None
+    rate_limit_context: Optional[RateLimitContext] = None
+
+
+class LooseIntentEvent(BaseModel):
+    """
+    IntentEvent for v2 ingress before canonicalization.
+
+    Uses free-form strings for fields that will be canonicalized.
+    """
+
+    id: str
+    schemaVersion: Literal["v1.1", "v1.2", "v1.3"] = "v1.3"
+    tenantId: str
+    timestamp: float
+    actor: Actor
+    action: str
+    resource: LooseResource
+    data: LooseData
+    risk: Risk
+    context: Optional[dict] = None
+    layer: Optional[str] = None
     tool_name: Optional[str] = None
     tool_method: Optional[str] = None
     tool_params: Optional[dict] = None
@@ -237,6 +285,17 @@ class ActionConstraint(BaseModel):
     actor_types: list[Literal["user", "service", "llm", "agent"]]
 
 
+class LooseActionConstraint(BaseModel):
+    """
+    Loose action constraints for v2 ingress.
+
+    Allows non-canonical actions while preserving actor type constraints.
+    """
+
+    actions: list[str]
+    actor_types: list[Literal["user", "service", "llm", "agent"]]
+
+
 class ResourceConstraint(BaseModel):
     """
     Defines allowed resource types, names, and locations for v1.1 boundaries.
@@ -251,6 +310,18 @@ class ResourceConstraint(BaseModel):
     locations: Optional[list[Literal["local", "cloud"]]] = None
 
 
+class LooseResourceConstraint(BaseModel):
+    """
+    Loose resource constraints for v2 ingress.
+
+    Allows non-canonical resource types.
+    """
+
+    types: list[str]
+    names: Optional[list[str]] = None
+    locations: Optional[list[Literal["local", "cloud"]]] = None
+
+
 class DataConstraint(BaseModel):
     """
     Defines allowed data sensitivity levels and characteristics for v1.1 boundaries.
@@ -261,6 +332,18 @@ class DataConstraint(BaseModel):
         {"sensitivity": ["internal"], "pii": false, "volume": "single"}
     """
     sensitivity: list[Literal["internal", "public"]]
+    pii: Optional[bool] = None
+    volume: Optional[Literal["single", "bulk"]] = None
+
+
+class LooseDataConstraint(BaseModel):
+    """
+    Loose data constraints for v2 ingress.
+
+    Allows non-canonical sensitivity values.
+    """
+
+    sensitivity: list[str]
     pii: Optional[bool] = None
     volume: Optional[Literal["single", "bulk"]] = None
 
@@ -295,6 +378,17 @@ class BoundaryConstraints(BaseModel):
     action: ActionConstraint
     resource: ResourceConstraint
     data: DataConstraint
+    risk: RiskConstraint
+
+
+class LooseBoundaryConstraints(BaseModel):
+    """
+    Loose boundary constraints for v2 ingress.
+    """
+
+    action: LooseActionConstraint
+    resource: LooseResourceConstraint
+    data: LooseDataConstraint
     risk: RiskConstraint
 
 
@@ -335,11 +429,31 @@ class DesignBoundary(BaseModel):
     type: Literal["mandatory", "optional"]
     boundarySchemaVersion: Literal["v1.1", "v1.2"] = "v1.2"  # v1.2: Support both versions, default to v1.2
     scope: BoundaryScope
+    layer: Optional[str] = None
     rules: BoundaryRules
     constraints: BoundaryConstraints
     notes: Optional[str] = None
     createdAt: float  # Unix timestamp
     updatedAt: float  # Unix timestamp
+
+
+class LooseDesignBoundary(BaseModel):
+    """
+    DesignBoundary for v2 ingress before canonicalization.
+    """
+
+    id: str
+    name: str
+    status: Literal["active", "disabled"]
+    type: Literal["mandatory", "optional"]
+    boundarySchemaVersion: Literal["v1.1", "v1.2"] = "v1.2"
+    scope: BoundaryScope
+    layer: Optional[str] = None
+    rules: BoundaryRules
+    constraints: LooseBoundaryConstraints
+    notes: Optional[str] = None
+    createdAt: float
+    updatedAt: float
 
 
 # ============================================================================

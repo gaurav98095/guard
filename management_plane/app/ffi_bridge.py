@@ -15,8 +15,6 @@ from typing import Optional
 
 import numpy as np
 
-from .config import config
-
 logger = logging.getLogger(__name__)
 
 
@@ -80,12 +78,17 @@ class SemanticSandbox:
             FileNotFoundError: If library file doesn't exist.
             OSError: If library fails to load.
         """
-        self.lib_path = lib_path or config.SEMANTIC_SANDBOX_LIB
+        if lib_path is None:
+            raise RuntimeError(
+                "Semantic sandbox has been removed from the v2 stack. "
+                "Use the data plane gRPC enforcement path instead."
+            )
+
+        self.lib_path = lib_path
 
         if not self.lib_path.exists():
             raise FileNotFoundError(
-                f"Rust library not found at {self.lib_path}. "
-                f"Run 'cd semantic-sandbox && cargo build --release' first."
+                f"Rust library not found at {self.lib_path}."
             )
 
         logger.info(f"Loading Rust library from {self.lib_path}")
@@ -263,7 +266,7 @@ def get_sandbox() -> SemanticSandbox:
     Returns:
         Singleton SemanticSandbox instance.
     """
-    global _sandbox
-    if _sandbox is None:
-        _sandbox = SemanticSandbox()
-    return _sandbox
+    raise RuntimeError(
+        "Semantic sandbox has been removed from the v2 stack. "
+        "Use the data plane gRPC enforcement path instead."
+    )

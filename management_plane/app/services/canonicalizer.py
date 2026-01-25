@@ -26,7 +26,7 @@ import numpy as np
 import onnxruntime as rt
 from transformers import AutoTokenizer
 
-from app.models import IntentEvent, DesignBoundary
+from app.models import DesignBoundary, IntentEvent, LooseDesignBoundary, LooseIntentEvent
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,10 @@ class BertCanonicalizer:
 
     def __init__(
         self,
-        model_dir: Path,
+        model_dir: Path | None = None,
+        model_path: Path | None = None,
+        tokenizer_path: Path | None = None,
+        label_maps_path: Path | None = None,
         confidence_high: float = 0.9,
         confidence_medium: float = 0.7,
     ):
@@ -143,13 +146,34 @@ class BertCanonicalizer:
             FileNotFoundError: If model files not found
             RuntimeError: If ONNX model fails to load
         """
+        if model_dir is None and model_path is None:
+            raise ValueError("model_dir or model_path must be provided")
+
+        if model_dir is None and model_path is not None:
+            model_dir = model_path.parent
+
+        if model_dir is None:
+            raise ValueError("model_dir could not be inferred from model_path")
+
         self.model_dir = Path(model_dir)
         self.confidence_high = confidence_high
         self.confidence_medium = confidence_medium
 
+        resolved_model_path = model_path or self.model_dir / "model.onnx"
+        resolved_tokenizer_path = tokenizer_path or self.model_dir / "tokenizer"
+        resolved_label_maps_path = label_maps_path or self.model_dir / "label_maps.json"
+
+        if not resolved_model_path.exists():
+            raise FileNotFoundError(f"ONNX model not found at {resolved_model_path}")
+
+        if not resolved_tokenizer_path.exists():
+            raise FileNotFoundError(f"Tokenizer not found at {resolved_tokenizer_path}")
+
+        if not resolved_label_maps_path.exists():
+            raise FileNotFoundError(f"Label maps not found at {resolved_label_maps_path}")
+
         # Load label maps
-        label_maps_path = self.model_dir / "label_maps.json"
-        with open(label_maps_path) as f:
+        with open(resolved_label_maps_path) as f:
             label_maps = json.load(f)
 
         self.action_labels = {v: k for k, v in label_maps["action"].items()}
@@ -157,16 +181,14 @@ class BertCanonicalizer:
         self.sensitivity_labels = {v: k for k, v in label_maps["sensitivity"].items()}
 
         # Load tokenizer
-        tokenizer_path = self.model_dir / "tokenizer"
-        logger.info(f"Loading tokenizer from {tokenizer_path}")
-        self.tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_path))
+        logger.info(f"Loading tokenizer from {resolved_tokenizer_path}")
+        self.tokenizer = AutoTokenizer.from_pretrained(str(resolved_tokenizer_path))
 
         # Load ONNX model
-        model_path = self.model_dir / "model.onnx"
-        logger.info(f"Loading ONNX model from {model_path}")
+        logger.info(f"Loading ONNX model from {resolved_model_path}")
         try:
             self.session = rt.InferenceSession(
-                str(model_path),
+                str(resolved_model_path),
                 providers=["CPUExecutionProvider"],
             )
             logger.info("ONNX model loaded successfully")
@@ -223,10 +245,14 @@ class BertCanonicalizer:
         resource_scores = outputs[1][0]  # (5,)
         sensitivity_scores = outputs[2][0]  # (3,)
 
-        # Convert to probabilities (softmax already applied in model)
-        action_probs = action_scores / action_scores.sum()
-        resource_probs = resource_scores / resource_scores.sum()
-        sensitivity_probs = sensitivity_scores / sensitivity_scores.sum()
+        # Apply softmax to convert logits to probabilities
+        def softmax(x):
+            exp_x = np.exp(x - np.max(x))  # Subtract max for numerical stability
+            return exp_x / exp_x.sum()
+
+        action_probs = softmax(action_scores)
+        resource_probs = softmax(resource_scores)
+        sensitivity_probs = softmax(sensitivity_scores)
 
         # Get argmax predictions
         action_idx = np.argmax(action_probs)
@@ -330,7 +356,7 @@ class BertCanonicalizer:
                 source="error",
             )
 
-    def canonicalize(self, event: IntentEvent) -> CanonicalizedEvent:
+    def canonicalize(self, event: IntentEvent | LooseIntentEvent) -> CanonicalizedEvent:
         """
         Canonicalize all terms in an IntentEvent.
 
@@ -364,7 +390,7 @@ class BertCanonicalizer:
 
         return CanonicalizedEvent(event, canonical_event, trace)
 
-    def canonicalize_boundary(self, boundary: DesignBoundary) -> CanonicalizedBoundary:
+    def canonicalize_boundary(self, boundary: DesignBoundary | LooseDesignBoundary) -> CanonicalizedBoundary:
         """
         Canonicalize all terms in a DesignBoundary.
 

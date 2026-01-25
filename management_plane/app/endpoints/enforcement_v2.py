@@ -49,23 +49,25 @@ import os
 import time
 import uuid
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.auth import User, get_current_tenant
-from app.models import IntentEvent, DesignBoundary, ComparisonResult
+from app.models import ComparisonResult, IntentEvent, LooseDesignBoundary, LooseIntentEvent
 from app.services import (
     BertCanonicalizer,
     CanonicalizedPredictionLogger,
+    DataPlaneClient,
+    DataPlaneError,
     IntentEncoder,
     PolicyEncoder,
 )
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v2", tags=["enforcement-v2"])
+router = APIRouter(prefix="", tags=["enforcement-v2"])
 
 
 # ============================================================================
@@ -74,36 +76,47 @@ router = APIRouter(prefix="/v2", tags=["enforcement-v2"])
 
 
 @lru_cache(maxsize=1)
-def get_canonicalizer() -> BertCanonicalizer:
+def get_canonicalizer() -> Optional[BertCanonicalizer]:
     """
     Get singleton BERT canonicalizer.
 
     Lazy-loads on first access, caches model in memory.
     """
-    from app.config import config
+    from app.settings import config
     from pathlib import Path
 
-    model_dir = Path(__file__).parent.parent.parent / "management_plane" / "models" / "canonicalizer_tinybert_v1.0"
+    model_path = Path(config.BERT_MODEL_PATH)
+    tokenizer_path = Path(config.BERT_TOKENIZER_PATH)
 
-    if not model_dir.exists():
-        logger.warning(f"BERT model not found at {model_dir}, using fallback")
-        return None
+    if not model_path.is_absolute():
+        model_path = config.PROJECT_ROOT / model_path
+
+    if not tokenizer_path.is_absolute():
+        tokenizer_path = config.PROJECT_ROOT / tokenizer_path
+
+    label_maps_path = model_path.parent / "label_maps.json"
 
     try:
         canonicalizer = BertCanonicalizer(
-            model_dir=model_dir,
-            confidence_high=float(config.__dict__.get("BERT_CONFIDENCE_HIGH", 0.9)),
-            confidence_medium=float(config.__dict__.get("BERT_CONFIDENCE_MEDIUM", 0.7)),
+            model_dir=model_path.parent,
+            model_path=model_path,
+            tokenizer_path=tokenizer_path,
+            label_maps_path=label_maps_path,
+            confidence_high=float(config.BERT_CONFIDENCE_HIGH),
+            confidence_medium=float(config.BERT_CONFIDENCE_MEDIUM),
         )
         logger.info("BERT canonicalizer loaded successfully")
         return canonicalizer
+    except FileNotFoundError as e:
+        logger.error(f"BERT canonicalizer files missing: {e}")
+        return None
     except Exception as e:
         logger.error(f"Failed to load BERT canonicalizer: {e}")
         return None
 
 
 @lru_cache(maxsize=1)
-def get_intent_encoder() -> IntentEncoder:
+def get_intent_encoder() -> Optional[IntentEncoder]:
     """
     Get singleton intent encoder.
 
@@ -119,7 +132,7 @@ def get_intent_encoder() -> IntentEncoder:
 
 
 @lru_cache(maxsize=1)
-def get_policy_encoder() -> PolicyEncoder:
+def get_policy_encoder() -> Optional[PolicyEncoder]:
     """
     Get singleton policy encoder.
 
@@ -141,10 +154,10 @@ def get_canonicalization_logger() -> CanonicalizedPredictionLogger:
 
     Manages async JSONL logging with file rotation.
     """
-    from app.config import config
+    from app.settings import config
 
-    log_dir = config.__dict__.get("CANONICALIZATION_LOG_DIR", "/var/log/guard/canonicalization")
-    retention_days = int(config.__dict__.get("CANONICALIZATION_LOG_RETENTION_DAYS", 90))
+    log_dir = config.CANONICALIZATION_LOG_DIR
+    retention_days = config.CANONICALIZATION_LOG_RETENTION_DAYS
 
     logger_instance = CanonicalizedPredictionLogger(
         log_dir=log_dir,
@@ -156,8 +169,6 @@ def get_canonicalization_logger() -> CanonicalizedPredictionLogger:
 @lru_cache(maxsize=1)
 def get_data_plane_client():
     """Get singleton Data Plane gRPC client."""
-    from tupl import DataPlaneClient
-
     url = os.getenv("DATA_PLANE_URL", "localhost:50051")
     insecure = "localhost" in url or "127.0.0.1" in url
     return DataPlaneClient(url=url, insecure=insecure)
@@ -189,6 +200,21 @@ class CanonicalizeResponse(BaseModel):
 
     canonical_intent: IntentEvent = Field(..., description="Canonicalized IntentEvent")
     canonicalization_trace: list[CanonicalizedField] = Field(..., description="Trace of all canonicalizations")
+
+
+class InstallPoliciesResponse(BaseModel):
+    """Response when a policy is installed via v2 endpoint."""
+
+    status: str = Field(..., description="Installation status (installed)")
+    boundary_id: str = Field(..., description="Boundary ID that was installed")
+    request_id: str = Field(..., description="Request trace identifier")
+    canonicalization_trace: list[CanonicalizedField] = Field(
+        ..., description="Canonicalization trace applied to the boundary"
+    )
+    installation_stats: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Statistics returned by the Data Plane after installation",
+    )
 
 
 # ============================================================================
@@ -240,7 +266,7 @@ async def _log_prediction_async(
 
 @router.post("/enforce", response_model=EnforcementResponse, status_code=status.HTTP_200_OK)
 async def enforce_v2(
-    event: IntentEvent,
+    event: LooseIntentEvent,
     current_user: User = Depends(get_current_tenant),
 ) -> EnforcementResponse:
     """
@@ -268,6 +294,9 @@ async def enforce_v2(
 
     # Set tenant_id
     event.tenantId = current_user.id
+
+    if not event.layer:
+        event.layer = "L4"
 
     logger.info(f"V2 enforce request: {request_id}, action={event.action}, resource={event.resource.type}")
 
@@ -322,7 +351,7 @@ async def enforce_v2(
             )
 
             # Log enforcement outcome
-            enforcement_outcome = "ALLOW" if result.decision == "ALLOW" else "DENY"
+            enforcement_outcome = "ALLOW" if result.decision == 1 else "DENY"
             for field in canonicalized.trace:
                 asyncio.create_task(
                     _log_prediction_async(
@@ -339,7 +368,6 @@ async def enforce_v2(
 
         except Exception as e:
             logger.error(f"Data Plane enforcement failed: {e}", exc_info=True)
-            from tupl import DataPlaneError
 
             if isinstance(e, DataPlaneError):
                 raise HTTPException(
@@ -351,8 +379,10 @@ async def enforce_v2(
         # Build response
         elapsed_ms = (time.time() - start_time) * 1000
 
+        decision = "ALLOW" if result.decision == 1 else "DENY"
+
         return EnforcementResponse(
-            decision=result.decision,
+            decision=decision,
             enforcement_latency_ms=elapsed_ms,
             metadata={
                 "request_id": request_id,
@@ -369,7 +399,7 @@ async def enforce_v2(
 
 @router.post("/canonicalize", response_model=CanonicalizeResponse, status_code=status.HTTP_200_OK)
 async def canonicalize_debug(
-    event: IntentEvent,
+    event: LooseIntentEvent,
     current_user: User = Depends(get_current_tenant),
 ) -> CanonicalizeResponse:
     """
@@ -391,6 +421,9 @@ async def canonicalize_debug(
     request_id = str(uuid.uuid4())
 
     event.tenantId = current_user.id
+
+    if not event.layer:
+        event.layer = "L4"
 
     logger.info(f"Canonicalize debug request: {request_id}")
 
@@ -427,11 +460,15 @@ async def canonicalize_debug(
         raise HTTPException(status_code=500, detail="Canonicalization failed") from e
 
 
-@router.post("/policies/install", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/policies/install",
+    response_model=InstallPoliciesResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def install_policies_v2(
-    boundary: DesignBoundary,
+    boundary: LooseDesignBoundary,
     current_user: User = Depends(get_current_tenant),
-) -> dict:
+) -> InstallPoliciesResponse:
     """
     Install policy with automatic canonicalization.
 
@@ -453,13 +490,10 @@ async def install_policies_v2(
         HTTPException: On canonicalization, encoding, or installation errors
     """
     request_id = str(uuid.uuid4())
-
-    boundary.tenantId = current_user.id
-
+    boundary.scope.tenantId = current_user.id
     logger.info(f"V2 policy install request: {request_id}, boundary_id={boundary.id}")
 
     try:
-        # Get services
         canonicalizer = get_canonicalizer()
         policy_encoder = get_policy_encoder()
         canon_logger = get_canonicalization_logger()
@@ -467,7 +501,6 @@ async def install_policies_v2(
         if not canonicalizer or not policy_encoder or not canon_logger:
             raise HTTPException(status_code=500, detail="Service initialization failed")
 
-        # Canonicalize boundary
         try:
             canonicalized = canonicalizer.canonicalize_boundary(boundary)
             canonical_boundary = canonicalized.canonical_boundary
@@ -476,7 +509,6 @@ async def install_policies_v2(
             logger.error(f"Boundary canonicalization failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Canonicalization failed")
 
-        # Log canonicalization asynchronously
         for field in canonicalized.trace:
             asyncio.create_task(
                 _log_prediction_async(
@@ -490,34 +522,36 @@ async def install_policies_v2(
                 )
             )
 
-        # Encode canonical boundary
         try:
             rule_vector = policy_encoder.encode(canonical_boundary)
         except Exception as e:
             logger.error(f"Policy encoding failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Policy encoding failed")
 
-        # Install via Data Plane
         client = get_data_plane_client()
 
         try:
-            await asyncio.to_thread(
+            installation_stats = await asyncio.to_thread(
                 client.install_policies,
                 [canonical_boundary],
-                [rule_vector.to_numpy().tolist()],
+                [rule_vector],
             )
+        except DataPlaneError as e:
+            logger.error(f"Data Plane installation error: {e}", exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Data Plane error: {e}") from e
         except Exception as e:
             logger.error(f"Policy installation failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Policy installation failed") from e
 
         logger.info(f"Policy installed: {boundary.id}")
 
-        return {
-            "status": "installed",
-            "boundary_id": boundary.id,
-            "request_id": request_id,
-            "canonicalization_trace": trace_dict["canonicalization_trace"],
-        }
+        return InstallPoliciesResponse(
+            status="installed",
+            boundary_id=boundary.id,
+            request_id=request_id,
+            canonicalization_trace=trace_dict["canonicalization_trace"],
+            installation_stats=installation_stats,
+        )
 
     except HTTPException:
         raise

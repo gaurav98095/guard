@@ -26,6 +26,7 @@ class Config:
 
     # API Configuration
     API_V1_PREFIX: str = "/api/v1"
+    API_V2_PREFIX: str = "/api/v2"
     HOST: str = os.getenv("MGMT_PLANE_HOST", "0.0.0.0")
     PORT: int = int(os.getenv("MGMT_PLANE_PORT", "8000"))
 
@@ -43,21 +44,6 @@ class Config:
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = os.getenv(
         "LOG_LEVEL", "INFO"
     )  # type: ignore
-
-    # Rust Library Path
-    SEMANTIC_SANDBOX_LIB: Path = Path(
-        os.getenv(
-            "SEMANTIC_SANDBOX_LIB_PATH",
-            str(
-                PROJECT_ROOT
-                / "data_plane"
-                / "semantic-sandbox"
-                / "target"
-                / "release"
-                / ("libsemantic_sandbox.dylib" if os.uname().sysname == "Darwin" else "libsemantic_sandbox.so")
-            ),
-        )
-    )
 
     # Application Metadata
     APP_NAME: str = "Management Plane"
@@ -85,11 +71,14 @@ class Config:
     # Canonicalization Configuration (v2)
     CANONICALIZATION_ENABLED: bool = os.getenv("CANONICALIZATION_ENABLED", "true").lower() == "true"
     CANONICALIZATION_CONFIG_PATH: str | None = os.getenv("CANONICALIZATION_CONFIG_PATH")
-    CANONICALIZATION_LOG_DIR: str = os.getenv("CANONICALIZATION_LOG_DIR", "/var/log/guard/canonicalization")
+    CANONICALIZATION_LOG_DIR: str = os.getenv(
+        "CANONICALIZATION_LOG_DIR",
+        str(PROJECT_ROOT / "data" / "logs"),
+    )
     CANONICALIZATION_LOG_RETENTION_DAYS: int = int(os.getenv("CANONICALIZATION_LOG_RETENTION_DAYS", "90"))
     BERT_MODEL_PATH: str = os.getenv(
         "BERT_MODEL_PATH",
-        "management_plane/models/canonicalizer_tinybert_v1.0/model.onnx",
+        "management_plane/models/canonicalizer_tinybert_v1.0/model_optimized.onnx",
     )
     BERT_TOKENIZER_PATH: str = os.getenv(
         "BERT_TOKENIZER_PATH",
@@ -106,11 +95,34 @@ class Config:
         Raises:
             FileNotFoundError: If Rust library is not found.
         """
-        if not cls.SEMANTIC_SANDBOX_LIB.exists():
-            raise FileNotFoundError(
-                f"Rust library not found at {cls.SEMANTIC_SANDBOX_LIB}. "
-                "Run 'cd data_plane/semantic-sandbox && cargo build --release' first."
-            )
+        if cls.CANONICALIZATION_ENABLED:
+            model_path = Path(cls.BERT_MODEL_PATH)
+            tokenizer_path = Path(cls.BERT_TOKENIZER_PATH)
+
+            if not model_path.is_absolute():
+                model_path = cls.PROJECT_ROOT / model_path
+
+            if not tokenizer_path.is_absolute():
+                tokenizer_path = cls.PROJECT_ROOT / tokenizer_path
+
+            if not model_path.exists():
+                raise FileNotFoundError(
+                    f"BERT model not found at {model_path}. "
+                    "Set BERT_MODEL_PATH to the model .onnx path."
+                )
+
+            if not tokenizer_path.exists():
+                raise FileNotFoundError(
+                    f"BERT tokenizer not found at {tokenizer_path}. "
+                    "Set BERT_TOKENIZER_PATH to the tokenizer directory."
+                )
+
+            label_maps_path = model_path.parent / "label_maps.json"
+            if not label_maps_path.exists():
+                raise FileNotFoundError(
+                    f"BERT label maps not found at {label_maps_path}. "
+                    "Expected label_maps.json alongside the ONNX model."
+                )
 
     @classmethod
     def get_google_api_key(cls) -> str:
