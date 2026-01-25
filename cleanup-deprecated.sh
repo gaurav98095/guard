@@ -69,8 +69,8 @@ delete_file() {
         else
             rm "$file"
             log_success "Deleted: $file"
+            echo "$file" >> "$BACKUP_FILE"
         fi
-        echo "$file" >> "$BACKUP_FILE"
     fi
 }
 
@@ -82,8 +82,8 @@ delete_directory() {
         else
             rm -rf "$dir"
             log_success "Deleted: $dir/"
+            echo "$dir/" >> "$BACKUP_FILE"
         fi
-        echo "$dir/" >> "$BACKUP_FILE"
     fi
 }
 
@@ -260,7 +260,7 @@ else
 fi
 
 if [[ -f "$BACKUP_FILE" ]]; then
-    local count=$(wc -l < "$BACKUP_FILE")
+    count=$(wc -l < "$BACKUP_FILE")
     echo "  Total: $count items"
     echo ""
     echo "  Breakdown:"
