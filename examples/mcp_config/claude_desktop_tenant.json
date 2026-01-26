@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "guard-enforcement": {
+      "url": "http://<GUARD_URL>:<PORT>/mcp",
+      "headers": {
+        "X-Tenant-Id": "<TENANT_ID>",
+        "X-User-Id": "<USER_ID>"
+      }
+    }
+  }
+}

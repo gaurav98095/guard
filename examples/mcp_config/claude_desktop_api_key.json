@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "guard-enforcement": {
+      "url": "http://<GUARD_URL>:<PORT>/mcp",
+      "headers": {
+        "Authorization": "Bearer sk-guard-YOUR_API_KEY"
+      }
+    }
+  }
+}
