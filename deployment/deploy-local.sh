@@ -111,7 +111,7 @@ $DOCKER_COMPOSE -f docker-compose.local.yml down || true
 # Build and start Docker containers
 echo "🐳 Building and starting Docker containers..."
 echo "   This may take several minutes on first run..."
-$DOCKER_COMPOSE -f docker-compose.local.yml up -d --build
+$DOCKER_COMPOSE -f docker-compose.local.yml up
 
 # Wait for all services health check
 echo "⏳ Waiting for services to become healthy..."

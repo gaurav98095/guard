@@ -1,6 +1,5 @@
 # Rust build stage
 FROM rust:latest AS rust-builder
-
 WORKDIR /rust-build
 
 # Install build dependencies
@@ -17,8 +16,8 @@ WORKDIR /rust-build/data_plane/tupl_dp/bridge
 RUN cargo build --release --bin bridge-server
 
 # Build semantic sandbox library
-WORKDIR /rust-build/data_plane/semantic-sandbox
-RUN cargo build --release --lib
+# WORKDIR /rust-build/data_plane/semantic-sandbox
+# RUN cargo build --release --lib
 
 # Python build stage
 FROM python:3.12-slim AS python-builder
@@ -27,23 +26,41 @@ WORKDIR /python-build
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    supervisor \
+    build-essential curl supervisor \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir \
+    grpcio \
+    grpcio-tools \
+    fastapi \
+    uvicorn[standard] \
+    pydantic \
+    requests \
+    python-multipart \
+    aiofiles \
+    transformers \
+    datasets \
+    pandas \
+    scikit-learn \
+    joblib
+
+    
 # Copy Python projects
 COPY management_plane/ ./management_plane/
-COPY sdk/ ./sdk/
+# COPY sdk/ ./sdk/
 
 # Install SDK dependencies
-WORKDIR /python-build/sdk/python
-RUN pip install --no-cache-dir .
+# WORKDIR /python-build/sdk/python
+# RUN pip install --no-cache-dir .
 
-# Install Management Plane dependencies (CPU-only PyTorch to save space)
-WORKDIR /python-build/management_plane
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch && \
-    pip install --no-cache-dir .
+COPY management_plane/app/generated/ ./management_plane/app/generated/
+# WORKDIR /python-build/app/
+# RUN MKDIR generated
+# RUN python -m grpc_tools.protoc \
+#     -I./data_plane/proto \
+#     --python_out=./generated \
+#     --grpc_python_out=./generated \
+#     ./data_plane/proto/rule_installation.proto
 
 # Final Stage
 FROM python:3.12-slim
@@ -58,14 +75,14 @@ RUN apt-get update && apt-get install -y \
 
 # Copy compiled artifacts
 COPY --from=rust-builder /rust-build/data_plane/tupl_dp/bridge/target/release/bridge-server /app/bridge-server
-COPY --from=rust-builder /rust-build/data_plane/semantic-sandbox/target/release/libsemantic_sandbox.so /app/libs/libsemantic_sandbox.so
+# COPY --from=rust-builder /rust-build/data_plane/semantic-sandbox/target/release/libsemantic_sandbox.so /app/libs/libsemantic_sandbox.so
 
 # Copy Python artifacts
 COPY --from=python-builder /python-build/management_plane /app/management_plane
 COPY --from=python-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
 # Copy Vocabulary
-COPY vocabulary.yaml /usr/local/lib/vocabulary.yaml
+# COPY vocabulary.yaml /usr/local/lib/vocabulary.yaml
 
 # Copy supervisord configuration
 COPY deployment/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
