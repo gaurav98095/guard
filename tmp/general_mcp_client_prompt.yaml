@@ -1,0 +1,28 @@
+task: Implement Guard MCP client updates
+goal: |
+  Implement the MCP client SDK changes to support X-Tenant-Id / X-User-Id header auth,
+  update client API, examples/templates, and tests per plan. Work independently and in parallel when possible.
+constraints:
+  - Do not create documentation unless explicitly requested by user.
+  - Prefer existing repo conventions; inspect current code before editing.
+  - Avoid touching unrelated files.
+  - Use apply_patch for single-file edits where practical.
+  - Keep ASCII-only unless file already uses Unicode.
+targets:
+  - Update GuardMCPClient to accept tenant_id and user_id, with header precedence rules.
+  - Support both header modes: X-Tenant-Id (+ optional X-User-Id) or Authorization Bearer.
+  - Add/adjust MCP config templates/examples to show tenant header usage.
+  - Add/adjust tests to cover tenant header auth and API key auth.
+steps:
+  - Discover existing guard_mcp_client package and examples/tests.
+  - Implement header construction logic with clear precedence (tenant headers override API key when set).
+  - Ensure connection uses constructed headers for MCP session initialization.
+  - Update or add examples/templates in repo to demonstrate both auth modes.
+  - Update or add integration tests as feasible without requiring external services.
+deliverables:
+  - Code changes in guard_mcp_client package.
+  - Example/config template updates if present in repo.
+  - Tests updated/added to validate behavior.
+report_back:
+  - Summarize changes with file paths.
+  - Call out any assumptions or open questions.
